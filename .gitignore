@@ -1,0 +1,13 @@
+# Folders to ignore
+__pycache__/
+.idea/
+.pytest_cache/
+ocr_text/
+original_pdf/
+
+# Files to ignore
+classes/ftp.py
+.env
+.coverage
+ocr.py
+*.xlsx
