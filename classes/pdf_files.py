@@ -3,10 +3,12 @@ pdf_files.py
 
 Module for handling .pdf files
 
-TODO: create a validate_path_to_pdf function.
+TODO: create a validate_path_to_pdf function. (Edit: Why?)
+TODO: create custom Exception classes.
 """
 
 # Imports
+from io import BytesIO
 from pathlib import Path
 import re
 import warnings
@@ -24,6 +26,7 @@ SUPPORTED_LANGUAGES = ['fr', 'en', 'es']
 
 
 # Utility functions
+# (See analyze function after PDFFile class definition.)
 def is_valid_url(url: str) -> bool:
     """
     This function sends a HEAD request to a given URL and if it receives
@@ -42,50 +45,44 @@ def is_valid_url(url: str) -> bool:
     return False
 
 
-def download_file(url: str, destination_path: Path) -> tuple:
+def download_file(url: str) -> tuple:
     """
-    This function downloads a .pdf file from a website, saves it locally and
-    returns an appropriate message.
+    This function downloads a .pdf file from a website, saves it in memory and
+    returns a success flag and the binary object as a tuple.
+
     :param url:                 The URL to get the .pdf file.
     :type url:                  str
-    :param destination_path:    The full path to the downloaded local file.
-    :type destination_path:     Path
-    :return:                    (True or False, and a message.)
+    :return:                    (Success flag, BytesIO object)
     """
     if not is_valid_url(url):
         raise ValueError("Invalid URL.")
 
-    if not isinstance(destination_path, Path):
-        raise TypeError("destination_path must be a valid Path.")
-
     try:
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
-            with open(destination_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=1024):
-                    f.write(chunk)
-        return True, f"File downloaded to {destination_path}."
+            bytes_object = b''
+            for chunk in response.iter_content(chunk_size=1024):
+                bytes_object += chunk
+        return True, BytesIO(bytes_object)
 
-    except Exception as e:
-        return False, f"Error downloading file : {e}"
+    except (requests.RequestException, Exception):
+        return False, BytesIO()
 
 
-def get_page_count(path_to_file: Path) -> int:
+def get_page_count(binary_object: BytesIO) -> int:
     """
-    This function extracts the pages from a .pdf file, counts the number of
-    pages and returns the count.
+    This function extracts the pages from a binary representation of a .pdf
+    file, counts the number of pages and returns the count.
 
-    :param path_to_file:    The full path to the .pdf file.
-    :type path_to_file:     Path
+    :param binary_object:   The binary object representing the .pdf file.
+    :type binary_object:    BytesIO
     :return:                The file's page count.
     """
-    if not isinstance(path_to_file, Path):
-        raise TypeError("path_to_file must be a valid Path.")
+    if not isinstance(binary_object, BytesIO):
+        msg = f"Expecting BytesIO object. Got {type(binary_object)} instead."
+        raise TypeError(msg)
 
-    if not path_to_file.name.lower().endswith('.pdf'):
-        raise ValueError("File must be a .pdf file.")
-
-    document = extract_pages(path_to_file)
+    document = extract_pages(binary_object)
     counter = 0
     for page in document:
         counter += 1
@@ -93,28 +90,28 @@ def get_page_count(path_to_file: Path) -> int:
     return counter
 
 
-def extract_ocr(path_to_file: Path) -> tuple:
+def extract_ocr(binary_object: BytesIO) -> tuple:
     """
-    This function extracts text from a .pdf file, sanitizes the text and
-    returns the cleaned text with an 'OCR quality' metric.
-    :param path_to_file:    The path to the .pdf file.
-    :type path_to_file:     Path
+    This function extracts text from a binary representation of a .pdf file,
+    sanitizes the text and returns the cleaned text with an 'OCR quality'
+    metric.
+
+    :param binary_object:   The binary object representing the .pdf file.
+    :type binary_object:    BytesIO
     :return:                (The sanitized text, the OCR quality metric)
     """
-    if not isinstance(path_to_file, Path):
-        raise TypeError("path_to_file must be a valid Path.")
-
-    if not path_to_file.name.lower().endswith('.pdf'):
-        raise ValueError("File must be a .pdf file.")
+    if not isinstance(binary_object, BytesIO):
+        msg = f"Expecting BytesIO object. Got {type(binary_object)} instead."
+        raise TypeError(msg)
 
     sanitized_text = ''
     ocr_quality = 0.0
 
     try:
-        raw_text = extract_text(path_to_file)
+        raw_text = extract_text(binary_object)
         no_extra_spaces_text = re.subn(r'( )+', ' ', raw_text)[0]
         sanitized_text = re.subn(BAD_OCR_PATTERN, '', no_extra_spaces_text)[0]
-        ocr_quality = len(no_extra_spaces_text) / len(sanitized_text)
+        ocr_quality = len(sanitized_text) / len(no_extra_spaces_text)
     except Exception as e:
         msg = f"pdfminer could not extract OCR due to {e}"
         warnings.warn(msg)
@@ -156,14 +153,13 @@ class PDFFile:
     """
     This class is used to handle a .pdf file's container and content.
     """
-    def __init__(self, url: str,
-                 pdf_file_path: Path,
-                 txt_file_path: Path):
+    def __init__(self, url: str, pdf_file_name: str, txt_file_path: Path):
         """
         Class constructor.
         """
         self.url = url
-        self.pdf_file_path = pdf_file_path
+        self.file_name = pdf_file_name
+        self.buffered_file = BytesIO()
         self.txt_file_path = txt_file_path
         self.language = None
         self.ocr = None
@@ -192,27 +188,26 @@ class PDFFile:
         self.__url = url
 
     @property
-    def pdf_file_path(self) -> Path:
+    def file_name(self) -> str:
         """
-        Returns the file name.
+        Returns the file_name property.
         """
-        return self.__pdf_file_path
+        return self.__file_name
 
-    @pdf_file_path.setter
-    def pdf_file_path(self, file_path: Path):
+    @file_name.setter
+    def file_name(self, name: str):
         """
-        Sets the name property.
-
-        :param file_path:    The .pdf file's full path.
-        :type file_path:     Path
+        Sets the object's file_name property
+        :param name:    The file's name with extension.
+        :type name:     str
         """
-        if not isinstance(file_path, Path):
-            raise TypeError("file_path must be a valid Path.")
+        if not isinstance(name, str):
+            raise TypeError("name must be a valid string.")
 
-        if not file_path.name.lower().endswith('.pdf'):
-            raise ValueError("File must be a .pdf file.")
+        if not name.lower().endswith('.pdf'):
+            raise ValueError("file must be a .pdf file.")
 
-        self.__pdf_file_path = file_path
+        self.__file_name = name
 
     @property
     def txt_file_path(self) -> Path:
@@ -253,34 +248,46 @@ class PDFFile:
         file_name = url_parts[-1]
         directory = url_parts[-2]
         txt_file = file_name.lower().replace('.pdf', '.txt')
-        return cls(url,
-                   PDF_BASE_DIR / directory / file_name,
-                   OCR_BASE_DIR / directory / txt_file)
+        return cls(url, file_name, OCR_BASE_DIR / directory / txt_file)
 
-    def analyze(self):
-        """
-        Things that need to be done here:
 
-        1. Count the pages. DONE!
-        2. Extract text from .pdf file. DONE!
-        3. Sanitize text: DONE!
-          a) Strip unnecessary white spaces;
-          b) Strip BAD_OCR_PATTERN from text;
-          c) Calculate OCR quality.
-        4. Count the number of word tokens in the text. DONE!
-        """
-        self.pages = get_page_count(self.pdf_file_path)
-        self.ocr, self.ocr_quality = extract_ocr(self.pdf_file_path)
-        self.tokens = get_token_count(self.ocr, self.language)
+def analyze(pdf_file: PDFFile) -> PDFFile:
+    """
+    Things that need to be done here:
 
-    def save_ocr(self):
-        """
-        This method saves the OCR text in a .txt file.
-        """
-        pass
+    0. Download .pdf file into buffer. DONE!
+    1. Count the pages. DONE!
+    2. Extract text from .pdf file. DONE!
+    3. Sanitize text: DONE!
+      a) Strip unnecessary white spaces; DONE!
+      b) Strip BAD_OCR_PATTERN from text; DONE!
+      c) Calculate OCR quality. DONE!
+    4. Count the number of word tokens in the text. DONE!
+    5. Erase the buffer from memory. DONE!
+    6. Save OCR to disk. DONE!
+    """
+    if not isinstance(pdf_file, PDFFile):
+        msg = f"PDFFile object expected. {type(pdf_file)} received instead."
+        raise TypeError(msg)
 
-    def delete_file(self):
-        """
-        This methods erases the
-        :return:
-        """
+    if not pdf_file.language:
+        raise AttributeError("Language attribute hasn't been assigned yet.")
+
+    try:
+        success, pdf_file.buffered_file = download_file(pdf_file.url)
+        if success:
+            pdf_file.pages = get_page_count(pdf_file.buffered_file)
+            pdf_file.ocr, pdf_file.ocr_quality = extract_ocr(pdf_file.buffered_file)
+            language = pdf_file.language
+            if language not in SUPPORTED_LANGUAGES:
+                language = 'fr'
+            pdf_file.tokens = get_token_count(pdf_file.ocr, language)
+            pdf_file.buffered_file.close()
+            pdf_file.buffered_file = None
+            with open(pdf_file.txt_file_path, 'w', encoding='utf8') as f:
+                f.write(pdf_file.ocr)
+    except (TypeError, AttributeError, Exception) as e:
+        msg = f"Could not analyze {pdf_file.file_name} because of {e}."
+        warnings.warn(msg)
+    finally:
+        return pdf_file

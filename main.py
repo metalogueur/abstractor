@@ -13,6 +13,7 @@ import spacy
 from spacy.language import Language
 from spacy_language_detection import LanguageDetector
 from classes.dissertations import Dissertation, DissertationList
+from classes.pdf_files import PDFFile, analyze
 
 # Constants
 REPOSITORY_URL = config('REPOSITORY_URL')
@@ -43,13 +44,14 @@ def main():
     print(f"Retrieved {len(dissertations)} in total...")
 
     print("Filtering out dissertations not from Symphony ILS")
-    limit_date = date(2001, 6, 1)
+    limit_date = date(2021, 1, 1)
     dissertations.data = dissertations.data[
         dissertations.data['publication_date'] <= limit_date
     ]
     print(f"{len(dissertations)} kept...")
 
     dissertations = detect_dissertation_language(dissertations)
+    dissertations = analyze_pdf_files(dissertations)
 
 
 def get_all_dissertations() -> DissertationList:
@@ -69,6 +71,7 @@ def get_all_dissertations() -> DissertationList:
     for record in records:
         dissertation = Dissertation.create_from_record(record)
         dissertations.append(dissertation)
+    print("Dissertation list created...")
 
     return dissertations
 
@@ -108,6 +111,42 @@ def detect_dissertation_language(dissertations: DissertationList) -> Dissertatio
         dissertations.data.at[index, 'language_score'] = language['score']
         bar.next()
 
+    print("Language detected in all dissertations...")
+
+    return dissertations
+
+
+def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
+    """
+    This function runs the classes.pdf_files module's analyze() function in all
+    pdf files listed in the dissertations list and returns a metrics-annotated
+    dissertation list.
+    :param dissertations:   The dissertations list that will be analyzed.
+    :type dissertations:    DissertationList
+    :return:                The annotated dissertation list.
+    """
+    if not isinstance(dissertations, DissertationList):
+        msg = f"DissertationList object expected. {type(dissertations)} received instead."
+        raise TypeError(msg)
+
+    dissertations.add_column('pages')
+    dissertations.add_column('token_count')
+    dissertations.add_column('ocr_quality')
+    dissertations.add_column('txt_file_name')
+
+    print("Starting .pdf files' OCR analysis...")
+    bar = Bar("Analyzing .pdfs", max=len(dissertations))
+    for index, dissertation in dissertations:
+        pdf_file = PDFFile.create_from_url(dissertation['url'])
+        pdf_file.language = dissertation['language']
+        pdf_file = analyze(pdf_file)
+        dissertations.data.at[index, 'pages'] = pdf_file.pages
+        dissertations.data.at[index, 'token_count'] = pdf_file.tokens
+        dissertations.data.at[index, 'ocr_quality'] = pdf_file.ocr_quality
+        dissertations.data.at[index, 'txt_file_name'] = pdf_file.txt_file_path.name
+        bar.next()
+
+    print(".pdf file OCR analysis finished...")
     return dissertations
 
 

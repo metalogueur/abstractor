@@ -10,4 +10,5 @@ classes/ftp.py
 .env
 .coverage
 ocr.py
+*.txt
 *.xlsx
