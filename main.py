@@ -6,13 +6,16 @@ Application's main script
 
 # Imports
 from datetime import date
+import logging
 from decouple import config
 from progress.bar import Bar
 from sickle import Sickle
 import spacy
 from spacy.language import Language
 from spacy_language_detection import LanguageDetector
-from classes.dissertations import Dissertation, DissertationList
+from classes.dissertations import (Dissertation,
+                                   DissertationList,
+                                   DISSERTATION_NO_URL_MSG)
 from classes.pdf_files import PDFFile, analyze
 
 # Constants
@@ -38,6 +41,7 @@ def main():
     8. Save OCR results in .txt files
     """
 
+    set_logging()
     print("Hello, World!")
 
     dissertations = get_all_dissertations()
@@ -134,9 +138,15 @@ def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
     dissertations.add_column('ocr_quality')
     dissertations.add_column('txt_file_name')
 
+    print("Excluding invalid URLs from dissertations list...")
+    d_copy = dissertations
+    d_copy.data = d_copy.data[
+        d_copy.data['url'] != DISSERTATION_NO_URL_MSG
+    ]
+
     print("Starting .pdf files' OCR analysis...")
-    bar = Bar("Analyzing .pdfs", max=len(dissertations))
-    for index, dissertation in dissertations:
+    bar = Bar("Analyzing .pdfs", max=len(d_copy))
+    for index, dissertation in d_copy:
         pdf_file = PDFFile.create_from_url(dissertation['url'])
         pdf_file.language = dissertation['language']
         pdf_file = analyze(pdf_file)
@@ -148,6 +158,19 @@ def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
 
     print(".pdf file OCR analysis finished...")
     return dissertations
+
+
+def set_logging():
+    """
+    This utility function is there just so it can be called outside main()
+    function.
+    """
+    msg_format = '[%(asctime)s - %(levelname)s] %(message)s'
+    logging.basicConfig(filename='abstractor.log',
+                        filemode='w',
+                        encoding='utf8',
+                        level=logging.INFO,
+                        format=msg_format)
 
 
 if __name__ == '__main__':

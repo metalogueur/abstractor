@@ -3,12 +3,12 @@ pdf_files.py
 
 Module for handling .pdf files
 
-TODO: create a validate_path_to_pdf function. (Edit: Why?)
 TODO: create custom Exception classes.
 """
 
 # Imports
 from io import BytesIO
+import logging
 from pathlib import Path
 import re
 import warnings
@@ -19,7 +19,6 @@ import spacy
 # Constants
 BAD_OCR_PATTERN = r'\(cid\:[0-9]+\)|\x0c'
 BASE_DIR = Path(__file__).resolve().parent.parent
-MINIMUM_LANGUAGE_SCORE = 0.714281
 PDF_BASE_DIR = BASE_DIR / 'original_pdf'
 OCR_BASE_DIR = BASE_DIR / 'ocr_text'
 SUPPORTED_LANGUAGES = ['fr', 'en', 'es']
@@ -39,10 +38,17 @@ def is_valid_url(url: str) -> bool:
     if not isinstance(url, str):
         raise TypeError("URL must be a valid string.")
 
-    request = requests.head(url)
-    if request.ok:
-        return True
-    return False
+    valid = False
+
+    try:
+        request = requests.head(url)
+        if request.ok:
+            valid = True
+    except (requests.exceptions.MissingSchema, Exception) as e:
+        msg = f"Could not validate URL : {e}"
+        logging.warning(msg)
+    finally:
+        return valid
 
 
 def download_file(url: str) -> tuple:
@@ -57,16 +63,22 @@ def download_file(url: str) -> tuple:
     if not is_valid_url(url):
         raise ValueError("Invalid URL.")
 
+    success = False
+    binary_object = BytesIO()
+
     try:
         with requests.get(url, stream=True) as response:
             response.raise_for_status()
             bytes_object = b''
             for chunk in response.iter_content(chunk_size=1024):
                 bytes_object += chunk
-        return True, BytesIO(bytes_object)
-
-    except (requests.RequestException, Exception):
-        return False, BytesIO()
+        success = True
+        binary_object = BytesIO(bytes_object)
+    except (requests.RequestException, Exception) as e:
+        msg = f"Could not download file at {url} because of {e}."
+        logging.warning(msg)
+    finally:
+        return success, binary_object
 
 
 def get_page_count(binary_object: BytesIO) -> int:
@@ -114,7 +126,7 @@ def extract_ocr(binary_object: BytesIO) -> tuple:
         ocr_quality = len(sanitized_text) / len(no_extra_spaces_text)
     except Exception as e:
         msg = f"pdfminer could not extract OCR due to {e}"
-        warnings.warn(msg)
+        logging.warning(msg)
     finally:
         return sanitized_text, ocr_quality
 
@@ -274,6 +286,8 @@ def analyze(pdf_file: PDFFile) -> PDFFile:
         raise AttributeError("Language attribute hasn't been assigned yet.")
 
     try:
+        msg = f"Analyzing {pdf_file.file_name}..."
+        logging.info(msg)
         success, pdf_file.buffered_file = download_file(pdf_file.url)
         if success:
             pdf_file.pages = get_page_count(pdf_file.buffered_file)
@@ -288,6 +302,6 @@ def analyze(pdf_file: PDFFile) -> PDFFile:
                 f.write(pdf_file.ocr)
     except (TypeError, AttributeError, Exception) as e:
         msg = f"Could not analyze {pdf_file.file_name} because of {e}."
-        warnings.warn(msg)
+        logging.warning(msg)
     finally:
         return pdf_file

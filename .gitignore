@@ -9,6 +9,7 @@ original_pdf/
 classes/ftp.py
 .env
 .coverage
+*.log
 ocr.py
 *.txt
 *.xlsx
