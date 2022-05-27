@@ -11,5 +11,4 @@ classes/ftp.py
 .coverage
 *.log
 ocr.py
-*.txt
 *.xlsx

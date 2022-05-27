@@ -1,0 +1,13 @@
+numpy==1.22.3
+openpyxl==3.0.9
+pandas==1.4.2
+pdfminer.six==20220319
+progress==1.6
+python-decouple==3.6
+requests==2.27.1
+sickle==0.7.0
+spacy==3.3.0
+en-core-web-sm==3.3.0
+es-core-news-sm==3.3.0
+fr-core-news-sm==3.3.0
+spacy-language-detection==0.2.1
