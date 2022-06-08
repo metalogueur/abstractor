@@ -16,7 +16,9 @@ from spacy_language_detection import LanguageDetector
 from classes.dissertations import (Dissertation,
                                    DissertationList,
                                    DISSERTATION_NO_URL_MSG)
-from classes.pdf_files import PDFFile, analyze
+from classes.pdf_files import (PDFFile,
+                               analyze,
+                               PDF_INVALID_URL)
 
 # Constants
 REPOSITORY_URL = config('REPOSITORY_URL')
@@ -47,15 +49,20 @@ def main():
     dissertations = get_all_dissertations()
     print(f"Retrieved {len(dissertations)} in total...")
 
-    print("Filtering out dissertations not from Symphony ILS")
-    limit_date = date(2021, 1, 1)
+    start_date = date(2020, 1, 1)
+    end_date = date(2020, 12, 31)
     dissertations.data = dissertations.data[
-        dissertations.data['publication_date'] <= limit_date
+        (dissertations.data['publication_date'] >= start_date) &
+        (dissertations.data['publication_date'] <= end_date)
     ]
     print(f"{len(dissertations)} kept...")
 
     dissertations = detect_dissertation_language(dissertations)
     dissertations = analyze_pdf_files(dissertations)
+
+    print("Saving data in Excel...")
+    dissertations.data.to_excel('data_2020.xlsx')
+    print("Thank you! Goodnight!")
 
 
 def get_all_dissertations() -> DissertationList:
@@ -141,7 +148,8 @@ def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
     print("Excluding invalid URLs from dissertations list...")
     d_copy = dissertations
     d_copy.data = d_copy.data[
-        d_copy.data['url'] != DISSERTATION_NO_URL_MSG
+        (d_copy.data['url'] != DISSERTATION_NO_URL_MSG) |
+        (d_copy.data['url'] != PDF_INVALID_URL)
     ]
 
     print("Starting .pdf files' OCR analysis...")

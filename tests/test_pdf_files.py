@@ -17,11 +17,13 @@ class TestPDFFile:
     """
     def test_create_from_url(self):
         invalid_url = 'https://www.exemple.com/gontrand.pdf'
-        with pytest.raises(ValueError):
-            pdf.PDFFile.create_from_url(invalid_url)
+        invalid_url_pdf = pdf.PDFFile.create_from_url(invalid_url)
+        assert invalid_url_pdf.url == pdf.PDF_INVALID_URL
+        assert invalid_url_pdf.file_name == pdf.PDF_INVALID_FILE_NAME
         not_pdf_url = 'https://www.hec.ca/biblio/'
-        with pytest.raises(ValueError):
-            pdf.PDFFile.create_from_url(not_pdf_url)
+        not_pdf_pdf = pdf.PDFFile.create_from_url(not_pdf_url)
+        assert not_pdf_pdf.url == pdf.PDF_INVALID_URL
+        assert not_pdf_pdf.file_name == pdf.PDF_INVALID_FILE_NAME
         valid_url = 'https://www.hec.ca/biblio/a-propos/Reglement-bibliotheque_2016.pdf'
         file_name = valid_url.split('/')[-1]
         pdf_file = pdf.PDFFile.create_from_url(valid_url)
@@ -33,9 +35,6 @@ class TestPDFFile:
         assert pdf_file.txt_file_path == pdf.OCR_BASE_DIR / directory / txt_file
 
     def test_property_exceptions(self):
-        invalid_url = 'https://www.exemple.com/gontrand.pdf'
-        with pytest.raises(ValueError):
-            pdf.PDFFile(invalid_url, 'name.pdf', Path('.'))
         valid_url = 'https://www.hec.ca/biblio/a-propos/Reglement-bibliotheque_2016.pdf'
         with pytest.raises(TypeError):
             pdf.PDFFile(valid_url, Path('memoires/name.pdf'), Path('.'))

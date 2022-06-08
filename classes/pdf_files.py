@@ -11,7 +11,6 @@ from io import BytesIO
 import logging
 from pathlib import Path
 import re
-import warnings
 from pdfminer.high_level import extract_pages, extract_text
 import requests
 import spacy
@@ -21,6 +20,8 @@ BAD_OCR_PATTERN = r'\(cid\:[0-9]+\)|\x0c'
 BASE_DIR = Path(__file__).resolve().parent.parent
 PDF_BASE_DIR = BASE_DIR / 'original_pdf'
 OCR_BASE_DIR = BASE_DIR / 'ocr_text'
+PDF_INVALID_URL = 'Invalid URL provided'
+PDF_INVALID_FILE_NAME = 'invalid_file.pdf'
 SUPPORTED_LANGUAGES = ['fr', 'en', 'es']
 
 
@@ -195,9 +196,9 @@ class PDFFile:
         :type url:      str
         """
         if not is_valid_url(url):
-            raise ValueError("Invalid URL provided.")
-
-        self.__url = url
+            self.__url = PDF_INVALID_URL
+        else:
+            self.__url = url
 
     @property
     def file_name(self) -> str:
@@ -244,23 +245,27 @@ class PDFFile:
     @classmethod
     def create_from_url(cls, url: str):
         """
-        The method makes sure the URL sent is a valid URL and sets the URL and
-        name object properties if it is.
+        The method makes sure the URL sent is a valid URL and sets the URL,
+        file_name and txt_file_name object properties if it is. If the URL or
+        the file it points to are invalid, the method sends dummy values to
+        the class constructor.
 
         :param url:     The URL address of the .pdf file.
         :type url:      str
         """
-        if not is_valid_url(url):
-            raise ValueError("Invalid URL.")
+        init_dir = OCR_BASE_DIR
 
-        if not url.lower().endswith('.pdf'):
-            raise ValueError("URL must point to a .pdf file.")
+        if not (is_valid_url(url) and url.lower().endswith('.pdf')):
+            init_url = PDF_INVALID_URL
+            init_file_name = PDF_INVALID_FILE_NAME
+        else:
+            init_url = url
+            url_parts = url.split('/')
+            init_file_name = url_parts[-1]
+            init_dir = init_dir / url_parts[-2]
 
-        url_parts = url.split('/')
-        file_name = url_parts[-1]
-        directory = url_parts[-2]
-        txt_file = file_name.lower().replace('.pdf', '.txt')
-        return cls(url, file_name, OCR_BASE_DIR / directory / txt_file)
+        txt_file = init_file_name.lower().replace('.pdf', '.txt')
+        return cls(init_url, init_file_name, init_dir / txt_file)
 
 
 def analyze(pdf_file: PDFFile) -> PDFFile:
