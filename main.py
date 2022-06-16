@@ -5,7 +5,7 @@ Application's main script
 """
 
 # Imports
-from datetime import date
+from datetime import date, datetime
 import logging
 from decouple import config
 from progress.bar import Bar
@@ -17,8 +17,7 @@ from classes.dissertations import (Dissertation,
                                    DissertationList,
                                    DISSERTATION_NO_URL_MSG)
 from classes.pdf_files import (PDFFile,
-                               analyze,
-                               PDF_INVALID_URL)
+                               analyze)
 
 # Constants
 REPOSITORY_URL = config('REPOSITORY_URL')
@@ -42,15 +41,15 @@ def main():
        b) for those with bad OCR, use pytesseract
     8. Save OCR results in .txt files
     """
-
+    main_start = datetime.now()
     set_logging()
-    print("Hello, World!")
+    print(f"Hello, World! Starting script at {main_start}...")
 
     dissertations = get_all_dissertations()
     print(f"Retrieved {len(dissertations)} in total...")
 
-    start_date = date(2020, 1, 1)
-    end_date = date(2020, 12, 31)
+    start_date = date(2010, 1, 1)
+    end_date = date(2019, 12, 31)
     dissertations.data = dissertations.data[
         (dissertations.data['publication_date'] >= start_date) &
         (dissertations.data['publication_date'] <= end_date)
@@ -61,8 +60,9 @@ def main():
     dissertations = analyze_pdf_files(dissertations)
 
     print("Saving data in Excel...")
-    dissertations.data.to_excel('data_2020.xlsx')
-    print("Thank you! Goodnight!")
+    dissertations.data.to_excel('data_2010-2019.xlsx')
+    main_end = datetime.now()
+    print(f"Script ended at {main_end}. Thank you! Goodnight!")
 
 
 def get_all_dissertations() -> DissertationList:
@@ -127,6 +127,7 @@ def detect_dissertation_language(dissertations: DissertationList) -> Dissertatio
     return dissertations
 
 
+# [2022-06-14] Rendre async ?
 def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
     """
     This function runs the classes.pdf_files module's analyze() function in all
@@ -148,8 +149,7 @@ def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
     print("Excluding invalid URLs from dissertations list...")
     d_copy = dissertations
     d_copy.data = d_copy.data[
-        (d_copy.data['url'] != DISSERTATION_NO_URL_MSG) |
-        (d_copy.data['url'] != PDF_INVALID_URL)
+        d_copy.data['url'] != DISSERTATION_NO_URL_MSG
     ]
 
     print("Starting .pdf files' OCR analysis...")
@@ -157,6 +157,7 @@ def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
     for index, dissertation in d_copy:
         pdf_file = PDFFile.create_from_url(dissertation['url'])
         pdf_file.language = dissertation['language']
+        # [2022-06-14] p = await analyze() ?
         pdf_file = analyze(pdf_file)
         dissertations.data.at[index, 'pages'] = pdf_file.pages
         dissertations.data.at[index, 'token_count'] = pdf_file.tokens

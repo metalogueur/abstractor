@@ -7,6 +7,7 @@ Tests everything in the classes.pdf_files module.
 # Imports
 from io import BytesIO
 from pathlib import Path
+from pdfminer.layout import LTImage
 import pytest
 import classes.pdf_files as pdf
 
@@ -71,17 +72,40 @@ class TestUtilityFunctions:
         with pytest.raises(TypeError):
             pdf.get_page_count('not a buffer')
 
-    def test_extract_ocr(self):
+    def test_extract_content(self):
         with pytest.raises(TypeError):
-            pdf.extract_ocr('not a buffer')
+            pdf.extract_content('not a buffer')
         url = 'https://www.hec.ca/biblio/a-propos/Reglement-bibliotheque_2016.pdf'
         success, buffer = pdf.download_file(url)
         assert success
-        text, ocr_quality = pdf.extract_ocr(buffer)
-        assert isinstance(text, str)
-        assert len(text) > 0
-        assert isinstance(ocr_quality, float)
-        assert ocr_quality > 0.0
+        text, images = pdf.extract_content(buffer)
+        assert isinstance(text, list)
+        assert isinstance(images, list)
+        assert len(text) == len(images)
+        assert len(text) == 5
+        for element in text:
+            assert isinstance(element, str)
+        for element in images:
+            assert isinstance(element, (list, type(None)))
+        # TODO : find .pdf with images and continue test
+
+    def test_sanitize_text(self):
+        with pytest.raises(TypeError):
+            pdf.sanitize_text(42)
+        url = 'https://www.hec.ca/biblio/a-propos/Reglement-bibliotheque_2016.pdf'
+        success, buffer = pdf.download_file(url)
+        assert success
+        text, images = pdf.extract_content(buffer)
+        first_page_text = text[0]
+        assert isinstance(first_page_text, str)
+        sanitized_first_page, page_ocr_quality = pdf.sanitize_text(first_page_text)
+        assert isinstance(page_ocr_quality, float)
+        assert (page_ocr_quality >= 0.0) & (page_ocr_quality <= 1.0)
+        assert isinstance(sanitized_first_page, str)
+        sanitized_document, ocr_quality = pdf.sanitize_text(text)
+        assert (ocr_quality >= 0.0) & (ocr_quality <= 1.0)
+        assert isinstance(sanitized_document, str)
+        assert sanitized_document.startswith(sanitized_first_page)
 
     def test_get_token_count(self):
         with pytest.raises(TypeError):
@@ -93,6 +117,7 @@ class TestUtilityFunctions:
         assert token_count == 5
         fr_token_count = pdf.get_token_count('Je suis un programmeur.', 'fr')
         assert token_count == 5
+        # TODO : find a text longer than 1M characters and do another test
 
     def test_analyze(self):
         with pytest.raises(TypeError):
@@ -104,6 +129,7 @@ class TestUtilityFunctions:
         with pytest.raises(AttributeError):
             pdf.analyze(pdf_file)
         pdf_file.language = 'fr'
+        # old tests below : replace with new ones
         pdf_file = pdf.analyze(pdf_file)
         assert isinstance(pdf_file, pdf.PDFFile)
         assert pdf_file.pages == 5

@@ -12,6 +12,7 @@ import logging
 from pathlib import Path
 import re
 from pdfminer.high_level import extract_pages, extract_text
+from pdfminer.layout import LTTextContainer, LTFigure, LTImage
 import requests
 import spacy
 
@@ -103,33 +104,70 @@ def get_page_count(binary_object: BytesIO) -> int:
     return counter
 
 
-def extract_ocr(binary_object: BytesIO) -> tuple:
+def extract_content(binary_object: BytesIO) -> tuple:
     """
-    This function extracts text from a binary representation of a .pdf file,
-    sanitizes the text and returns the cleaned text with an 'OCR quality'
-    metric.
-
+    This function extract all text and image contents from a .pdf file and
+    returns a tuple of lists.
     :param binary_object:   The binary object representing the .pdf file.
     :type binary_object:    BytesIO
-    :return:                (The sanitized text, the OCR quality metric)
+    :return:                ([Text content], [Images])
     """
     if not isinstance(binary_object, BytesIO):
         msg = f"Expecting BytesIO object. Got {type(binary_object)} instead."
         raise TypeError(msg)
 
-    sanitized_text = ''
-    ocr_quality = 0.0
+    page_text = []
+    page_images = []
 
     try:
-        raw_text = extract_text(binary_object)
-        no_extra_spaces_text = re.subn(r'( )+', ' ', raw_text)[0]
-        sanitized_text = re.subn(BAD_OCR_PATTERN, '', no_extra_spaces_text)[0]
-        ocr_quality = len(sanitized_text) / len(no_extra_spaces_text)
+        pages = extract_pages(binary_object)
+        for page in pages:
+            text = ''
+            images = []
+            for element in page:
+                if isinstance(element, LTTextContainer):
+                    text += element.get_text()
+                if isinstance(element, LTFigure):
+                    for figure in element:
+                        if isinstance(figure, LTImage):
+                            images.append(figure)
+            page_text.append(text)
+            if images:
+                page_images.append(images)
+            else:
+                page_images.append(None)
     except Exception as e:
-        msg = f"pdfminer could not extract OCR due to {e}"
+        msg = "pdfminer could not extract content because of {e}"
         logging.warning(msg)
     finally:
-        return sanitized_text, ocr_quality
+        return page_text, page_images
+
+
+def sanitize_text(raw_text: str | list) -> tuple:
+    """
+    This function strips text fetched from a .pdf file's OCR of its bad
+    characters and extra white spaces and returns a tuple containing the
+    sanitized text and an OCR quality metric based solely on the presence
+    of bad characters.
+
+    :param raw_text:    The text fetched from the .pdf file's OCR
+    :type raw_text:     str | list
+    :return:            (Sanitized text, OCR quality metric)
+    """
+    if not isinstance(raw_text, (str, list)):
+        msg = f"raw_text must be string or list. {type(raw_text)} received."
+        raise TypeError(msg)
+
+    if isinstance(raw_text, list):
+        text = '\n'.join(raw_text)
+    else:
+        text = raw_text
+
+    no_extra_spaces_text = re.subn(r'( )+', ' ', text)[0]
+    sanitized_text = re.subn(BAD_OCR_PATTERN, '', no_extra_spaces_text)[0]
+    ocr_quality = len(sanitized_text) / len(no_extra_spaces_text)
+
+    return sanitized_text, ocr_quality
 
 
 def get_token_count(text: str, language: str) -> int:
@@ -148,6 +186,11 @@ def get_token_count(text: str, language: str) -> int:
 
     if language not in SUPPORTED_LANGUAGES:
         raise ValueError("language is not supported for parsing.")
+
+    if len(text) > 1000000:
+        msg = f"Text too long to parse and will be truncated to 1M characters."
+        logging.warning(msg)
+        text = text[:1000000]
 
     model = '_core_news_sm'
     if language == 'en':
@@ -268,6 +311,7 @@ class PDFFile:
         return cls(init_url, init_file_name, init_dir / txt_file)
 
 
+# [2022-06-14] Rendre async?
 def analyze(pdf_file: PDFFile) -> PDFFile:
     """
     Things that need to be done here:
@@ -293,13 +337,17 @@ def analyze(pdf_file: PDFFile) -> PDFFile:
     try:
         msg = f"Analyzing {pdf_file.file_name}..."
         logging.info(msg)
+        # [2022-06-14] s, p = await download_file() ?
         success, pdf_file.buffered_file = download_file(pdf_file.url)
         if success:
-            pdf_file.pages = get_page_count(pdf_file.buffered_file)
-            pdf_file.ocr, pdf_file.ocr_quality = extract_ocr(pdf_file.buffered_file)
+            # new analysis starts here
+            page_text, page_images = extract_content(pdf_file.buffered_file)
+            pdf_file.pages = len(page_text)
+            pdf_file.ocr, pdf_file.ocr_quality = sanitize_text(page_text)
             language = pdf_file.language
             if language not in SUPPORTED_LANGUAGES:
                 language = 'fr'
+            # [2022-06-14] p = await get_token_count() ?
             pdf_file.tokens = get_token_count(pdf_file.ocr, language)
             pdf_file.buffered_file.close()
             pdf_file.buffered_file = None
