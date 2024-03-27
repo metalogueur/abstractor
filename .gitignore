@@ -2,6 +2,7 @@
 __pycache__/
 .idea/
 .pytest_cache/
+abstracts/
 ocr_text/
 original_pdf/
 
@@ -10,5 +11,8 @@ classes/ftp.py
 .env
 .coverage
 *.log
+get_abstracts.py
+get_pdf_text.py
 ocr.py
+ocr_tesseract.py
 *.xlsx

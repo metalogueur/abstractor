@@ -9,6 +9,7 @@ from datetime import date, datetime
 import logging
 from decouple import config
 from progress.bar import Bar
+from requests import Session
 from sickle import Sickle
 import spacy
 from spacy.language import Language
@@ -48,8 +49,8 @@ def main():
     dissertations = get_all_dissertations()
     print(f"Retrieved {len(dissertations)} in total...")
 
-    start_date = date(2010, 1, 1)
-    end_date = date(2019, 12, 31)
+    start_date = date(1992, 1, 1)
+    end_date = date(1992, 12, 31)
     dissertations.data = dissertations.data[
         (dissertations.data['publication_date'] >= start_date) &
         (dissertations.data['publication_date'] <= end_date)
@@ -60,7 +61,7 @@ def main():
     dissertations = analyze_pdf_files(dissertations)
 
     print("Saving data in Excel...")
-    dissertations.data.to_excel('data_2010-2019.xlsx')
+    dissertations.data.to_excel('data_1992.xlsx')
     main_end = datetime.now()
     print(f"Script ended at {main_end}. Thank you! Goodnight!")
 
@@ -152,13 +153,15 @@ def analyze_pdf_files(dissertations: DissertationList) -> DissertationList:
         d_copy.data['url'] != DISSERTATION_NO_URL_MSG
     ]
 
+    session = Session()
+
     print("Starting .pdf files' OCR analysis...")
     bar = Bar("Analyzing .pdfs", max=len(d_copy))
     for index, dissertation in d_copy:
-        pdf_file = PDFFile.create_from_url(dissertation['url'])
+        pdf_file = PDFFile.create_from_url(dissertation['url'], session)
         pdf_file.language = dissertation['language']
         # [2022-06-14] p = await analyze() ?
-        pdf_file = analyze(pdf_file)
+        pdf_file = analyze(pdf_file, session)
         dissertations.data.at[index, 'pages'] = pdf_file.pages
         dissertations.data.at[index, 'token_count'] = pdf_file.tokens
         dissertations.data.at[index, 'ocr_quality'] = pdf_file.ocr_quality
